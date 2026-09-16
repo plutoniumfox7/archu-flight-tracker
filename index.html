@@ -170,7 +170,7 @@
     // Zoom & pan support
     svg.call(d3.zoom().scaleExtent([0.8, 10]).on("zoom", (e) => g.attr("transform", e.transform)));
 
-    // Render world geometry
+    // Render base map
     fetch("https://unpkg.com/world-atlas@2.0.2/countries-110m.json")
       .then(res => res.json())
       .then(world => {
@@ -186,7 +186,7 @@
       });
 
     function drawStaticRoute() {
-      // Direct route line
+      // Flight corridor line
       g.append("path")
         .datum({ type: "LineString", coordinates: [depCoords, arrCoords] })
         .attr("class", "route-path")
@@ -207,12 +207,13 @@
       const statusText = document.getElementById("feed-status");
       const pingText = document.getElementById("last-ping");
 
-      // CORS-friendly open ADS-B API queried by callsign
-      const url = "https://api.adsb.lol/v2/callsign/IGO6535";
+      // Route via CORS proxy to prevent browser cross-origin block
+      const targetApi = encodeURIComponent("https://api.adsb.lol/v2/callsign/IGO6535");
+      const url = `https://corsproxy.io/?url=${targetApi}`;
 
       try {
         const res = await fetch(url);
-        if (!res.ok) throw new Error("Network response not OK");
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
 
         if (data && data.ac && data.ac.length > 0) {
@@ -247,9 +248,9 @@
         }
       } catch (err) {
         statusText.innerText = "STANDBY";
-        pingText.innerText = "No active ping";
+        pingText.innerText = "Awaiting transponder";
         renderPlane(depCoords[0], depCoords[1], 42);
-        console.warn("Live feed status:", err.message);
+        console.warn("ADS-B feed check:", err.message);
       }
     }
 
