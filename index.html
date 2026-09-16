@@ -5,12 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="theme-color" content="#0B1120" />
   <meta name="mobile-web-app-capable" content="yes" />
-  <title>SkyPulse | Live Flight Tracker</title>
+  <title>SkyPulse | Live ADS-B</title>
 
-  <!-- PWA Manifest -->
-  <link rel="manifest" href='data:application/json;charset=utf-8,{"name":"SkyPulse Flight Tracker","short_name":"SkyPulse","start_url":"./index.html","display":"standalone","background_color":"%230B1120","theme_color":"%230B1120"}' />
-
-  <!-- D3.js and TopoJSON -->
   <script src="https://d3js.org/d3.v7.min.js"></script>
   <script src="https://unpkg.com/topojson-client@3"></script>
 
@@ -27,31 +23,31 @@
       user-select: none;
     }
     header {
-      padding: 14px 16px;
+      padding: 12px 16px;
       display: flex;
       justify-content: space-between;
       align-items: center;
       background: #111827;
       border-bottom: 1px solid #1f2937;
     }
-    .brand { font-size: 1.1rem; font-weight: 700; letter-spacing: 0.5px; }
+    .brand { font-size: 1.05rem; font-weight: 700; letter-spacing: 0.5px; }
     .brand span { color: #38bdf8; }
-    .live-tag {
-      font-size: 0.75rem;
-      background: rgba(34, 197, 94, 0.15);
-      color: #4ade80;
+    .status-badge {
+      font-size: 0.7rem;
+      background: rgba(56, 189, 248, 0.15);
+      color: #38bdf8;
       padding: 4px 8px;
       border-radius: 12px;
       display: flex;
       align-items: center;
-      gap: 5px;
+      gap: 6px;
       font-weight: 600;
     }
-    .live-dot {
-      width: 7px; height: 7px; border-radius: 50%; background: #4ade80;
-      animation: pulse 1.5s infinite;
+    .pulse-dot {
+      width: 6px; height: 6px; border-radius: 50%; background: #38bdf8;
+      animation: blink 1.2s infinite ease-in-out;
     }
-    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+    @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.2; } }
 
     #map-container {
       flex: 1;
@@ -61,52 +57,36 @@
     }
     svg { width: 100%; height: 100%; display: block; }
     .land { fill: #1e293b; stroke: #334155; stroke-width: 0.5px; }
-    .route-bg { stroke: #334155; stroke-width: 2.5; stroke-dasharray: 4, 4; fill: none; }
-    .airport-node { fill: #38bdf8; stroke: #fff; stroke-width: 1.5px; }
-    .plane-icon { fill: #facc15; filter: drop-shadow(0 0 6px rgba(250, 204, 21, 0.8)); }
+    .route-path { stroke: #334155; stroke-width: 2; stroke-dasharray: 4, 4; fill: none; }
+    .airport-point { fill: #38bdf8; stroke: #fff; stroke-width: 1.5px; }
+    .plane-icon { fill: #facc15; filter: drop-shadow(0 0 8px rgba(250, 204, 21, 0.9)); transition: all 1s linear; }
 
     #panel {
       background: #111827;
       border-top: 1px solid #1f2937;
-      padding: 14px 16px calc(14px + env(safe-area-inset-bottom));
+      padding: 12px 16px calc(14px + env(safe-area-inset-bottom));
     }
-    .flight-tabs {
+    .flight-title {
       display: flex;
-      gap: 8px;
-      overflow-x: auto;
-      padding-bottom: 10px;
-      scrollbar-width: none;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
     }
-    .flight-tabs::-webkit-scrollbar { display: none; }
-    .tab {
-      background: #1f2937;
-      color: #94a3b8;
-      border: 1px solid #374151;
-      border-radius: 8px;
-      padding: 6px 12px;
-      font-size: 0.8rem;
-      white-space: nowrap;
-      cursor: pointer;
-    }
-    .tab.active {
-      background: #0284c7;
-      color: #fff;
-      border-color: #38bdf8;
-      font-weight: 600;
-    }
+    .flight-name { font-size: 1.1rem; font-weight: 800; color: #f8fafc; }
+    .source-label { font-size: 0.7rem; color: #94a3b8; }
     .route-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-top: 4px;
+      padding: 6px 0;
     }
-    .airport { font-size: 1.25rem; font-weight: 800; }
-    .city { font-size: 0.75rem; color: #94a3b8; }
+    .airport { font-size: 1.2rem; font-weight: 800; }
+    .city { font-size: 0.7rem; color: #94a3b8; }
     .stats-grid {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
       gap: 8px;
-      margin-top: 10px;
+      margin-top: 8px;
     }
     .stat-box {
       background: #1f2937;
@@ -114,15 +94,18 @@
       border-radius: 8px;
       text-align: center;
     }
-    .stat-label { font-size: 0.65rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; }
-    .stat-value { font-size: 0.9rem; font-weight: 700; margin-top: 2px; color: #f8fafc; }
+    .stat-label { font-size: 0.6rem; color: #94a3b8; text-transform: uppercase; }
+    .stat-value { font-size: 0.85rem; font-weight: 700; margin-top: 2px; color: #f8fafc; }
   </style>
 </head>
 <body>
 
   <header>
     <div class="brand">SKY<span>PULSE</span></div>
-    <div class="live-tag"><span class="live-dot"></span> TRACKING</div>
+    <div class="status-badge">
+      <span class="pulse-dot" id="dot"></span>
+      <span id="feed-status">CONNECTING ADS-B</span>
+    </div>
   </header>
 
   <div id="map-container">
@@ -130,69 +113,41 @@
   </div>
 
   <div id="panel">
-    <div class="flight-tabs" id="tabs"></div>
+    <div class="flight-title">
+      <div class="flight-name">IndiGo 6E 6535 <span style="font-size:0.75rem; color:#94a3b8;">(IGO6535)</span></div>
+      <div class="source-label" id="last-ping">Awaiting Ping...</div>
+    </div>
     <div class="route-header">
       <div>
-        <div class="airport" id="dep-code">COK</div>
-        <div class="city" id="dep-city">Kochi</div>
+        <div class="airport">COK</div>
+        <div class="city">Kochi</div>
       </div>
       <div style="color: #38bdf8; font-size: 1.1rem; font-weight: bold;">➔</div>
       <div style="text-align: right;">
-        <div class="airport" id="arr-code">BLR</div>
-        <div class="city" id="arr-city">Bengaluru</div>
+        <div class="airport">BLR</div>
+        <div class="city">Bengaluru</div>
       </div>
     </div>
     <div class="stats-grid">
       <div class="stat-box">
         <div class="stat-label">Altitude</div>
-        <div class="stat-value" id="alt-val">28,000 ft</div>
+        <div class="stat-value" id="alt-val">--</div>
       </div>
       <div class="stat-box">
         <div class="stat-label">Ground Speed</div>
-        <div class="stat-value" id="spd-val">420 kts</div>
+        <div class="stat-value" id="spd-val">--</div>
       </div>
       <div class="stat-box">
-        <div class="stat-label">Progress</div>
-        <div class="stat-value" id="prog-val">65%</div>
+        <div class="stat-label">Heading</div>
+        <div class="stat-value" id="hdg-val">--</div>
       </div>
     </div>
   </div>
 
   <script>
-    const flights = [
-      {
-        id: "6E 6535",
-        airline: "IndiGo",
-        dep: { code: "COK", city: "Kochi", coords: [76.3869, 10.1520] },
-        arr: { code: "BLR", city: "Bengaluru", coords: [77.7066, 13.1986] },
-        alt: "28,000 ft",
-        speed: "420 kts",
-        progress: 0.65,
-        heading: 42
-      },
-      {
-        id: "AI 101",
-        airline: "Air India",
-        dep: { code: "DEL", city: "Delhi", coords: [77.1000, 28.5562] },
-        arr: { code: "JFK", city: "New York", coords: [-73.7781, 40.6413] },
-        alt: "34,000 ft",
-        speed: "485 kts",
-        progress: 0.58,
-        heading: 295
-      },
-      {
-        id: "EK 506",
-        airline: "Emirates",
-        dep: { code: "DXB", city: "Dubai", coords: [55.3657, 25.2532] },
-        arr: { code: "BOM", city: "Mumbai", coords: [72.8656, 19.0896] },
-        alt: "31,000 ft",
-        speed: "460 kts",
-        progress: 0.72,
-        heading: 105
-      }
-    ];
+    const depCoords = [76.3869, 10.1520]; // Kochi (COK)
+    const arrCoords = [77.7066, 13.1986]; // Bengaluru (BLR)
 
-    let selectedFlight = flights[0];
     const container = document.getElementById("map-container");
     const width = container.clientWidth;
     const height = container.clientHeight;
@@ -200,101 +155,112 @@
     const svg = d3.select("#map").attr("viewBox", `0 0 ${width} ${height}`);
     const g = svg.append("g");
 
-    // Dynamic Mercator projection
-    const projection = d3.geoMercator();
+    // Center map projection closely over South India corridor
+    const projection = d3.geoMercator()
+      .center([77.0, 11.6])
+      .scale(width * 4.5)
+      .translate([width / 2, height / 2]);
+
     const path = d3.geoPath().projection(projection);
 
-    const zoom = d3.zoom().scaleExtent([0.8, 12]).on("zoom", (e) => g.attr("transform", e.transform));
-    svg.call(zoom);
+    // Zoom & pan
+    svg.call(d3.zoom().scaleExtent([0.8, 10]).on("zoom", (e) => g.attr("transform", e.transform)));
 
-    let worldData = null;
-
+    // Load geometry
     fetch("https://unpkg.com/world-atlas@2.0.2/countries-110m.json")
       .then(res => res.json())
       .then(world => {
-        worldData = world;
         g.selectAll("path.land")
           .data(topojson.feature(world, world.objects.countries).features)
           .enter().append("path")
           .attr("class", "land")
           .attr("d", path);
 
-        updateFlightDisplay();
+        drawStaticRoute();
+        pollOpenSky();
+        setInterval(pollOpenSky, 15000); // Poll ADS-B every 15s
       });
 
-    const tabsContainer = document.getElementById("tabs");
-    flights.forEach((f, i) => {
-      const tab = document.createElement("button");
-      tab.className = `tab ${i === 0 ? "active" : ""}`;
-      tab.innerText = `${f.id} (${f.dep.code}→${f.arr.code})`;
-      tab.onclick = () => {
-        document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
-        tab.classList.add("active");
-        selectedFlight = f;
-        updateFlightDisplay();
-      };
-      tabsContainer.appendChild(tab);
-    });
-
-    function updateFlightDisplay() {
-      document.getElementById("dep-code").innerText = selectedFlight.dep.code;
-      document.getElementById("dep-city").innerText = selectedFlight.dep.city;
-      document.getElementById("arr-code").innerText = selectedFlight.arr.code;
-      document.getElementById("arr-city").innerText = selectedFlight.arr.city;
-      document.getElementById("alt-val").innerText = selectedFlight.alt;
-      document.getElementById("spd-val").innerText = selectedFlight.speed;
-      document.getElementById("prog-val").innerText = `${Math.round(selectedFlight.progress * 100)}%`;
-
-      // Auto-center map on the active flight's route
-      const midLon = (selectedFlight.dep.coords[0] + selectedFlight.arr.coords[0]) / 2;
-      const midLat = (selectedFlight.dep.coords[1] + selectedFlight.arr.coords[1]) / 2;
-
-      // Adjust zoom scale depending on whether it's domestic or long-haul
-      const isDomestic = Math.abs(selectedFlight.dep.coords[0] - selectedFlight.arr.coords[0]) < 10;
-      const targetScale = isDomestic ? width * 3.5 : width / 5.5;
-
-      projection
-        .scale(targetScale)
-        .center([midLon, midLat])
-        .translate([width / 2, height / 2]);
-
-      // Re-render land
-      if (worldData) {
-        g.selectAll("path.land").attr("d", path);
-      }
-
-      g.selectAll(".flight-element").remove();
-
-      // Route line
-      const geoLine = {
-        type: "LineString",
-        coordinates: [selectedFlight.dep.coords, selectedFlight.arr.coords]
-      };
-
+    function drawStaticRoute() {
+      // Flight path corridor
       g.append("path")
-        .datum(geoLine)
-        .attr("class", "route-bg flight-element")
+        .datum({ type: "LineString", coordinates: [depCoords, arrCoords] })
+        .attr("class", "route-path")
         .attr("d", path);
 
-      // Airport points
-      [selectedFlight.dep.coords, selectedFlight.arr.coords].forEach(coord => {
-        const [cx, cy] = projection(coord);
+      // Airport dots
+      [depCoords, arrCoords].forEach(pt => {
+        const [x, y] = projection(pt);
         g.append("circle")
-          .attr("class", "airport-node flight-element")
-          .attr("cx", cx)
-          .attr("cy", cy)
+          .attr("class", "airport-point")
+          .attr("cx", x)
+          .attr("cy", y)
           .attr("r", 4);
       });
+    }
 
-      // Current airplane location
-      const interpolator = d3.geoInterpolate(selectedFlight.dep.coords, selectedFlight.arr.coords);
-      const currentPos = interpolator(selectedFlight.progress);
-      const [px, py] = projection(currentPos);
+    async function pollOpenSky() {
+      const statusText = document.getElementById("feed-status");
+      const pingText = document.getElementById("last-ping");
+
+      // Bounding box over South India: lat 8 to 15, lon 74 to 80
+      const url = "https://opensky-network.org/api/states/all?lamin=8.0&lomin=74.0&lamax=15.0&lomax=80.0";
+
+      try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error("API rate-limit or network delay");
+        const data = await res.json();
+
+        // Search for IGO6535 transponder callsign
+        const match = (data.states || []).find(s => {
+          const callsign = (s[1] || "").trim().toUpperCase();
+          return callsign === "IGO6535" || callsign === "6E6535";
+        });
+
+        if (match) {
+          // OpenSky state schema: [0]=icao24, [1]=callsign, [5]=lon, [6]=lat, [7]=baro_alt_m, [8]=on_ground, [9]=velocity_m_s, [10]=heading
+          const lon = match[5];
+          const lat = match[6];
+          const altMeters = match[7] || 0;
+          const onGround = match[8];
+          const velocityMs = match[9] || 0;
+          const heading = match[10] || 0;
+
+          const altFt = Math.round(altMeters * 3.28084);
+          const speedKts = Math.round(velocityMs * 1.94384);
+
+          statusText.innerText = onGround ? "ON GROUND" : "AIRBORNE";
+          pingText.innerText = new Date().toLocaleTimeString();
+
+          document.getElementById("alt-val").innerText = onGround ? "On Tarmac" : `${altFt.toLocaleString()} ft`;
+          document.getElementById("spd-val").innerText = `${speedKts} kts`;
+          document.getElementById("hdg-val").innerText = `${Math.round(heading)}°`;
+
+          renderPlane(lon, lat, heading);
+        } else {
+          statusText.innerText = "STANDBY / SCHEDULED";
+          pingText.innerText = "No active transponder ping";
+          document.getElementById("alt-val").innerText = "Grounded / Inactive";
+          document.getElementById("spd-val").innerText = "0 kts";
+          document.getElementById("hdg-val").innerText = "--";
+
+          // If no transponder ping received yet, place icon at departure gate (COK)
+          renderPlane(depCoords[0], depCoords[1], 42);
+        }
+      } catch (err) {
+        statusText.innerText = "FEED RETRYING";
+        console.warn("OpenSky feed notice:", err.message);
+      }
+    }
+
+    function renderPlane(lon, lat, heading) {
+      g.selectAll(".plane-icon").remove();
+      const [x, y] = projection([lon, lat]);
 
       g.append("path")
-        .attr("class", "plane-icon flight-element")
+        .attr("class", "plane-icon")
         .attr("d", "M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z")
-        .attr("transform", `translate(${px - 12}, ${py - 12}) scale(1) rotate(${selectedFlight.heading}, 12, 12)`);
+        .attr("transform", `translate(${x - 12}, ${y - 12}) scale(1) rotate(${heading || 0}, 12, 12)`);
     }
   </script>
 </body>
