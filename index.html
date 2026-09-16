@@ -1,267 +1,51 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <meta name="theme-color" content="#0B1120" />
-  <meta name="mobile-web-app-capable" content="yes" />
-  <title>SkyPulse | Live ADS-B</title>
-
-  <script src="https://d3js.org/d3.v7.min.js"></script>
-  <script src="https://unpkg.com/topojson-client@3"></script>
-
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: #0b1120;
-      color: #f1f5f9;
-      display: flex;
-      flex-direction: column;
-      height: 100vh;
-      overflow: hidden;
-      user-select: none;
-    }
-    header {
-      padding: 12px 16px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      background: #111827;
-      border-bottom: 1px solid #1f2937;
-    }
-    .brand { font-size: 1.05rem; font-weight: 700; letter-spacing: 0.5px; }
-    .brand span { color: #38bdf8; }
-    .status-badge {
-      font-size: 0.7rem;
-      background: rgba(56, 189, 248, 0.15);
-      color: #38bdf8;
-      padding: 4px 8px;
-      border-radius: 12px;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      font-weight: 600;
-    }
-    .pulse-dot {
-      width: 6px; height: 6px; border-radius: 50%; background: #38bdf8;
-      animation: blink 1.2s infinite ease-in-out;
-    }
-    @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.2; } }
-
-    #map-container {
-      flex: 1;
-      position: relative;
-      background: radial-gradient(circle at center, #131d33 0%, #080d19 100%);
-      touch-action: none;
-    }
-    svg { width: 100%; height: 100%; display: block; }
-    .land { fill: #1e293b; stroke: #334155; stroke-width: 0.5px; }
-    .route-path { stroke: #334155; stroke-width: 2; stroke-dasharray: 4, 4; fill: none; }
-    .airport-point { fill: #38bdf8; stroke: #fff; stroke-width: 1.5px; }
-    .plane-icon { fill: #facc15; filter: drop-shadow(0 0 8px rgba(250, 204, 21, 0.9)); transition: all 1s linear; }
-
-    #panel {
-      background: #111827;
-      border-top: 1px solid #1f2937;
-      padding: 12px 16px calc(14px + env(safe-area-inset-bottom));
-    }
-    .flight-title {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 8px;
-    }
-    .flight-name { font-size: 1.1rem; font-weight: 800; color: #f8fafc; }
-    .source-label { font-size: 0.7rem; color: #94a3b8; }
-    .route-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 6px 0;
-    }
-    .airport { font-size: 1.2rem; font-weight: 800; }
-    .city { font-size: 0.7rem; color: #94a3b8; }
-    .stats-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 8px;
-      margin-top: 8px;
-    }
-    .stat-box {
-      background: #1f2937;
-      padding: 8px;
-      border-radius: 8px;
-      text-align: center;
-    }
-    .stat-label { font-size: 0.6rem; color: #94a3b8; text-transform: uppercase; }
-    .stat-value { font-size: 0.85rem; font-weight: 700; margin-top: 2px; color: #f8fafc; }
-  </style>
-</head>
-<body>
-
-  <header>
-    <div class="brand">SKY<span>PULSE</span></div>
-    <div class="status-badge">
-      <span class="pulse-dot" id="dot"></span>
-      <span id="feed-status">CONNECTING ADS-B</span>
-    </div>
-  </header>
-
-  <div id="map-container">
-    <svg id="map"></svg>
-  </div>
-
-  <div id="panel">
-    <div class="flight-title">
-      <div class="flight-name">IndiGo 6E 6535 <span style="font-size:0.75rem; color:#94a3b8;">(IGO6535)</span></div>
-      <div class="source-label" id="last-ping">Awaiting Ping...</div>
-    </div>
-    <div class="route-header">
-      <div>
-        <div class="airport">COK</div>
-        <div class="city">Kochi</div>
-      </div>
-      <div style="color: #38bdf8; font-size: 1.1rem; font-weight: bold;">➔</div>
-      <div style="text-align: right;">
-        <div class="airport">BLR</div>
-        <div class="city">Bengaluru</div>
-      </div>
-    </div>
-    <div class="stats-grid">
-      <div class="stat-box">
-        <div class="stat-label">Altitude</div>
-        <div class="stat-value" id="alt-val">--</div>
-      </div>
-      <div class="stat-box">
-        <div class="stat-label">Ground Speed</div>
-        <div class="stat-value" id="spd-val">--</div>
-      </div>
-      <div class="stat-box">
-        <div class="stat-label">Heading</div>
-        <div class="stat-value" id="hdg-val">--</div>
-      </div>
-    </div>
-  </div>
-
-  <script>
-    const depCoords = [76.3869, 10.1520]; // Kochi (COK)
-    const arrCoords = [77.7066, 13.1986]; // Bengaluru (BLR)
-
-    const container = document.getElementById("map-container");
-    const width = container.clientWidth;
-    const height = container.clientHeight;
-
-    const svg = d3.select("#map").attr("viewBox", `0 0 ${width} ${height}`);
-    const g = svg.append("g");
-
-    // Center map projection closely over South India corridor
-    const projection = d3.geoMercator()
-      .center([77.0, 11.6])
-      .scale(width * 4.5)
-      .translate([width / 2, height / 2]);
-
-    const path = d3.geoPath().projection(projection);
-
-    // Zoom & pan
-    svg.call(d3.zoom().scaleExtent([0.8, 10]).on("zoom", (e) => g.attr("transform", e.transform)));
-
-    // Load geometry
-    fetch("https://unpkg.com/world-atlas@2.0.2/countries-110m.json")
-      .then(res => res.json())
-      .then(world => {
-        g.selectAll("path.land")
-          .data(topojson.feature(world, world.objects.countries).features)
-          .enter().append("path")
-          .attr("class", "land")
-          .attr("d", path);
-
-        drawStaticRoute();
-        pollOpenSky();
-        setInterval(pollOpenSky, 15000); // Poll ADS-B every 15s
-      });
-
-    function drawStaticRoute() {
-      // Flight path corridor
-      g.append("path")
-        .datum({ type: "LineString", coordinates: [depCoords, arrCoords] })
-        .attr("class", "route-path")
-        .attr("d", path);
-
-      // Airport dots
-      [depCoords, arrCoords].forEach(pt => {
-        const [x, y] = projection(pt);
-        g.append("circle")
-          .attr("class", "airport-point")
-          .attr("cx", x)
-          .attr("cy", y)
-          .attr("r", 4);
-      });
-    }
-
-    async function pollOpenSky() {
+async function pollOpenSky() {
       const statusText = document.getElementById("feed-status");
       const pingText = document.getElementById("last-ping");
 
-      // Bounding box over South India: lat 8 to 15, lon 74 to 80
-      const url = "https://opensky-network.org/api/states/all?lamin=8.0&lomin=74.0&lamax=15.0&lomax=80.0";
+      // CORS-friendly, public ADS-B query directly for IndiGo 6E 6535
+      const url = "https://api.adsb.lol/v2/callsign/IGO6535";
 
       try {
         const res = await fetch(url);
-        if (!res.ok) throw new Error("API rate-limit or network delay");
+        if (!res.ok) throw new Error("ADSB network response not OK");
         const data = await res.json();
 
-        // Search for IGO6535 transponder callsign
-        const match = (data.states || []).find(s => {
-          const callsign = (s[1] || "").trim().toUpperCase();
-          return callsign === "IGO6535" || callsign === "6E6535";
-        });
+        // Check if aircraft is currently broadcasting
+        if (data && data.ac && data.ac.length > 0) {
+          const plane = data.ac[0];
 
-        if (match) {
-          // OpenSky state schema: [0]=icao24, [1]=callsign, [5]=lon, [6]=lat, [7]=baro_alt_m, [8]=on_ground, [9]=velocity_m_s, [10]=heading
-          const lon = match[5];
-          const lat = match[6];
-          const altMeters = match[7] || 0;
-          const onGround = match[8];
-          const velocityMs = match[9] || 0;
-          const heading = match[10] || 0;
-
-          const altFt = Math.round(altMeters * 3.28084);
-          const speedKts = Math.round(velocityMs * 1.94384);
+          const lon = plane.lon;
+          const lat = plane.lat;
+          const altFt = plane.alt_baro === "ground" ? 0 : (plane.alt_baro || 0);
+          const speedKts = Math.round(plane.gs || 0);
+          const heading = Math.round(plane.track || 0);
+          const onGround = plane.alt_baro === "ground" || altFt === 0;
 
           statusText.innerText = onGround ? "ON GROUND" : "AIRBORNE";
           pingText.innerText = new Date().toLocaleTimeString();
 
           document.getElementById("alt-val").innerText = onGround ? "On Tarmac" : `${altFt.toLocaleString()} ft`;
           document.getElementById("spd-val").innerText = `${speedKts} kts`;
-          document.getElementById("hdg-val").innerText = `${Math.round(heading)}°`;
+          document.getElementById("hdg-val").innerText = `${heading}°`;
 
-          renderPlane(lon, lat, heading);
+          if (lat && lon) {
+            renderPlane(lon, lat, heading);
+          }
         } else {
+          // Flight is not currently in the sky or transponder is off
           statusText.innerText = "STANDBY / SCHEDULED";
-          pingText.innerText = "No active transponder ping";
-          document.getElementById("alt-val").innerText = "Grounded / Inactive";
+          pingText.innerText = "Transponder inactive";
+          document.getElementById("alt-val").innerText = "At Gate / Inactive";
           document.getElementById("spd-val").innerText = "0 kts";
           document.getElementById("hdg-val").innerText = "--";
 
-          // If no transponder ping received yet, place icon at departure gate (COK)
+          // Keep placeholder at Kochi (COK)
           renderPlane(depCoords[0], depCoords[1], 42);
         }
       } catch (err) {
-        statusText.innerText = "FEED RETRYING";
-        console.warn("OpenSky feed notice:", err.message);
+        statusText.innerText = "STANDBY";
+        pingText.innerText = "No active ping";
+        renderPlane(depCoords[0], depCoords[1], 42);
+        console.warn("Live feed check:", err.message);
       }
     }
-
-    function renderPlane(lon, lat, heading) {
-      g.selectAll(".plane-icon").remove();
-      const [x, y] = projection([lon, lat]);
-
-      g.append("path")
-        .attr("class", "plane-icon")
-        .attr("d", "M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z")
-        .attr("transform", `translate(${x - 12}, ${y - 12}) scale(1) rotate(${heading || 0}, 12, 12)`);
-    }
-  </script>
-</body>
-</html>
